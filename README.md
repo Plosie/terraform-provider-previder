@@ -42,13 +42,21 @@ resource "previder_virtual_network" "testlab-net" {
   name = "testlab-net"
   type = "VLAN"
   address_pools = {
-    "lan" = {
+    "ipv4" = {
       start       = "192.168.10.10"
       end         = "192.168.10.200"
       mask        = "255.255.255.0"
       gateway     = "192.168.10.1"
       type        = "IPV4"
       nameservers = ["80.65.96.50", "62.165.127.222"]
+    }
+    "ipv6" = {
+      start       = "2001:db8:128::10"
+      end         = "2001:db8:128::ffff"
+      mask        = "ffff:ffff:ffff:ffff::"
+      gateway     = "2001:db8:128::1"
+      type        = "IPV6"
+      nameservers = ["2001:1690:1:a::53", "2001:1690:1:c::53"]
     }
   }
 }
@@ -63,7 +71,7 @@ The following arguments are supported:
   - end : (Required) End IP address in the pool
   - mask : (Required) Subnet mask for the pool
   - gateway : (Optional) Gateway for the pool
-  - type : (Required) Address pool type, for example `IPV4`
+  - type : (Required) Address pool type, for example `IPV4` or `IPV6`
   - nameservers : (Optional) DNS servers for the pool
 
 The `address_pools` map keys are Terraform-only stable identifiers; they are not sent to the Previder API.

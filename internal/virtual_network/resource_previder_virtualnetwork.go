@@ -28,6 +28,19 @@ type resourceImpl struct {
 	client *client.PreviderClient
 }
 
+type virtualNetworkCreateRequest struct {
+	Name  string   `json:"name"`
+	Type  string   `json:"type"`
+	Group string   `json:"group,omitempty"`
+	Tags  []string `json:"tags"`
+}
+
+type virtualNetworkUpdateRequest struct {
+	Name  string   `json:"name"`
+	Group string   `json:"group,omitempty"`
+	Tags  []string `json:"tags"`
+}
+
 func (r *resourceImpl) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = ResourceType
 }
@@ -81,7 +94,7 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 }
 
 func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var create client.VirtualNetworkUpdate
+	var create virtualNetworkCreateRequest
 	var plan, data resourceData
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -92,12 +105,14 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	create.Name = plan.Name.ValueString()
 	create.Type = plan.Type.ValueString()
 	create.Group = plan.Group.ValueString()
+	create.Tags = []string{}
 	if err := validateAddressPools(ctx, plan.AddressPools); err != nil {
 		resp.Diagnostics.AddError("Error while creating Virtual Network", err.Error())
 		return
 	}
 
-	task, err := r.client.VirtualNetwork.Create(&create)
+	task := new(client.VirtualNetworkTask)
+	err := r.client.Post(iaasBasePath+"virtualnetwork", create, task)
 	if err != nil {
 		resp.Diagnostics.AddError("Error while creating Virtual Server", fmt.Sprintf("Error while creating Virtual Network (%s): %s", plan.Name.ValueString(), err))
 		return
@@ -180,7 +195,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	var vm *client.VirtualNetwork
-	update := client.VirtualNetworkUpdate{}
+	update := virtualNetworkUpdateRequest{}
 
 	vm, err := r.client.VirtualNetwork.Get(state.Id.ValueString())
 
@@ -190,15 +205,16 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	update.Name = plan.Name.ValueString()
-	update.Type = plan.Type.ValueString()
 	update.Group = plan.Group.ValueString()
+	update.Tags = []string{}
 	if err := validateAddressPools(ctx, plan.AddressPools); err != nil {
 		resp.Diagnostics.AddError("Error updating Virtual Network", err.Error())
 		return
 	}
 
 	if state.Name.ValueString() != plan.Name.ValueString() || state.Group.ValueString() != plan.Group.ValueString() {
-		task, err := r.client.VirtualNetwork.Update(state.Id.ValueString(), &update)
+		task := new(client.VirtualNetworkTask)
+		err := r.client.Put(iaasBasePath+"virtualnetwork/"+state.Id.ValueString(), update, task)
 		if err != nil {
 			resp.Diagnostics.AddError("Error updating Virtual Network", fmt.Sprintf("Virtual Network has not been updated %s: %s", state.Name, err.Error()))
 			return

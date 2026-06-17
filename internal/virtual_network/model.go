@@ -1,6 +1,8 @@
 package virtual_network
 
 import (
+	"context"
+
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/previder/previder-go-sdk/client"
@@ -8,13 +10,14 @@ import (
 )
 
 type resourceData struct {
-	Id    types.String `tfsdk:"id"`
-	Name  types.String `tfsdk:"name"`
-	Type  types.String `tfsdk:"type"`
-	Group types.String `tfsdk:"group"`
+	Id           types.String                       `tfsdk:"id"`
+	Name         types.String                       `tfsdk:"name"`
+	Type         types.String                       `tfsdk:"type"`
+	Group        types.String                       `tfsdk:"group"`
+	AddressPools map[string]resourceDataAddressPool `tfsdk:"address_pools"`
 }
 
-func populateResourceData(data *resourceData, in *client.VirtualNetwork, plan *resourceData) diag.Diagnostics {
+func populateResourceData(ctx context.Context, data *resourceData, in *client.VirtualNetwork, pools []addressPool, plan *resourceData) diag.Diagnostics {
 	var diags diag.Diagnostics
 	var newDiags diag.Diagnostics
 
@@ -30,6 +33,7 @@ func populateResourceData(data *resourceData, in *client.VirtualNetwork, plan *r
 	} else {
 		data.Group = types.StringValue(in.GroupName)
 	}
+	data.AddressPools = flattenAddressPools(ctx, pools, plan.AddressPools)
 
 	diags.Append(newDiags...)
 

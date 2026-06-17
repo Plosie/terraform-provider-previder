@@ -39,14 +39,34 @@ The following arguments are supported:
 #### Example usage
 ```
 resource "previder_virtual_network" "testlab-net" {
-    name = "testlab-net"
-    type = "VLAN"
+  name = "testlab-net"
+  type = "VLAN"
+  address_pools = {
+    "lan" = {
+      start       = "192.168.10.10"
+      end         = "192.168.10.200"
+      mask        = "255.255.255.0"
+      gateway     = "192.168.10.1"
+      type        = "IPV4"
+      nameservers = ["80.65.96.50", "62.165.127.222"]
+    }
+  }
 }
 ```
 #### Argument reference
 
 The following arguments are supported:
 - name : (Required) The network name
+- type : (Required) The network type, for example `VLAN`
+- address_pools : (Optional) Map of address pools to create on the virtual network
+  - start : (Required) Start IP address in the pool
+  - end : (Required) End IP address in the pool
+  - mask : (Required) Subnet mask for the pool
+  - gateway : (Optional) Gateway for the pool
+  - type : (Required) Address pool type, for example `IPV4`
+  - nameservers : (Optional) DNS servers for the pool
+
+The `address_pools` map keys are Terraform-only stable identifiers; they are not sent to the Previder API.
 
 ### previder_virtual_server
 #### Example usage 1
@@ -267,4 +287,3 @@ This project uses the API client from the [previder-go-sdk](https://github.com/p
 * Start a feature/bugfix branch
 * Commit and push until you are happy with your contribution
 * Send a pull request describing your exact problem, what and how you fixed it
-

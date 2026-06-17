@@ -71,6 +71,12 @@ func (r *resourceImpl) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				stringplanmodifier.UseStateForUnknown(),
 			},
 		},
+		"address_pools": schema.MapNestedAttribute{
+			Optional: true,
+			NestedObject: schema.NestedAttributeObject{
+				Attributes: addressPoolSchemaAttributes(),
+			},
+		},
 	}
 }
 
@@ -86,6 +92,10 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 	create.Name = plan.Name.ValueString()
 	create.Type = plan.Type.ValueString()
 	create.Group = plan.Group.ValueString()
+	if err := validateAddressPools(ctx, plan.AddressPools); err != nil {
+		resp.Diagnostics.AddError("Error while creating Virtual Network", err.Error())
+		return
+	}
 
 	task, err := r.client.VirtualNetwork.Create(&create)
 	if err != nil {
@@ -108,7 +118,25 @@ func (r *resourceImpl) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	populateResourceData(&data, network, &plan)
+	err = syncAddressPools(ctx, r.client, data.Id.ValueString(), plan.AddressPools, nil)
+	if err != nil {
+		resp.Diagnostics.AddError("Error while creating address pools", err.Error())
+		return
+	}
+
+	network, err = r.client.VirtualNetwork.Get(task.VirtualNetwork)
+	if err != nil {
+		resp.Diagnostics.AddError("Virtual Network could not be found after address pool creation", fmt.Sprintf("Error while creating Virtual Network (%s): %s", plan.Name.ValueString(), err))
+		return
+	}
+
+	pools, err := listAddressPools(r.client, data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Error while reading address pools", fmt.Sprintf("Error while creating Virtual Network (%s): %s", plan.Name.ValueString(), err))
+		return
+	}
+
+	populateResourceData(ctx, &data, network, pools, &plan)
 
 	log.Printf("Searching for ID %s", data.Id.ValueString())
 
@@ -133,7 +161,13 @@ func (r *resourceImpl) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	populateResourceData(&data, network, &state)
+	pools, err := listAddressPools(r.client, state.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Error while fetching Virtual Network address pools", fmt.Sprintf("Error while fetching Virtual Network (%s): %s", data.Id, err))
+		return
+	}
+
+	populateResourceData(ctx, &data, network, pools, &state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -157,14 +191,38 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	update.Name = plan.Name.ValueString()
 	update.Type = plan.Type.ValueString()
-
-	task, err := r.client.VirtualNetwork.Update(state.Id.ValueString(), &update)
-
-	if err != nil {
-		resp.Diagnostics.AddError("Error updating Virtual Network", fmt.Sprintf("Virtual Network has not been updated %s: %s", state.Name, err.Error()))
+	update.Group = plan.Group.ValueString()
+	if err := validateAddressPools(ctx, plan.AddressPools); err != nil {
+		resp.Diagnostics.AddError("Error updating Virtual Network", err.Error())
 		return
 	}
-	_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
+
+	if state.Name.ValueString() != plan.Name.ValueString() || state.Group.ValueString() != plan.Group.ValueString() {
+		task, err := r.client.VirtualNetwork.Update(state.Id.ValueString(), &update)
+		if err != nil {
+			resp.Diagnostics.AddError("Error updating Virtual Network", fmt.Sprintf("Virtual Network has not been updated %s: %s", state.Name, err.Error()))
+			return
+		}
+		_, _ = r.client.Task.WaitFor(task.Id, 5*time.Minute)
+
+		vm, err = r.client.VirtualNetwork.Get(state.Id.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Virtual Network could not be found after update", fmt.Sprintf("Error while updating Virtual Network (%s): %s", plan.Name.ValueString(), err))
+			return
+		}
+	}
+
+	err = syncAddressPools(ctx, r.client, state.Id.ValueString(), plan.AddressPools, state.AddressPools)
+	if err != nil {
+		resp.Diagnostics.AddError("Error while updating address pools", err.Error())
+		return
+	}
+
+	pools, err := listAddressPools(r.client, state.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Error while reading address pools", fmt.Sprintf("Error while updating Virtual Network (%s): %s", plan.Name.ValueString(), err))
+		return
+	}
 
 	vm, err = r.client.VirtualNetwork.Get(state.Id.ValueString())
 	if err != nil {
@@ -172,7 +230,7 @@ func (r *resourceImpl) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	populateResourceData(&data, vm, &plan)
+	populateResourceData(ctx, &data, vm, pools, &plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -207,8 +265,13 @@ func (r *resourceImpl) ImportState(ctx context.Context, req resource.ImportState
 	var data resourceData
 
 	var network, _ = r.client.VirtualNetwork.Get(req.ID)
+	pools, err := listAddressPools(r.client, req.ID)
+	if err != nil {
+		resp.Diagnostics.AddError("Error while importing Virtual Network address pools", err.Error())
+		return
+	}
 
-	populateResourceData(&data, network, nil)
+	populateResourceData(ctx, &data, network, pools, nil)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
